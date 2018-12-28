@@ -16,6 +16,9 @@
     - name: postgres
     - name: singleton-database
     name: postgres
+    provides:
+      postgres:
+        as: postgres_db
     properties:
       databases:
         databases:
@@ -160,13 +163,13 @@
 - type: replace
   path: /instance_groups/name=api/jobs/name=routing-api/properties/routing_api/sqldb/port
   value: 5524
-- type: remove
-  path: /releases/name=cf-mysql?
-- type: remove
-  path: /variables/name=cf_mysql_mysql_admin_password?
-- type: remove
-  path: /variables/name=cf_mysql_mysql_cluster_health_password?
-- type: remove
-  path: /variables/name=cf_mysql_mysql_galera_healthcheck_endpoint_password?
-- type: remove
-  path: /variables/name=cf_mysql_mysql_galera_healthcheck_password?
+#- type: remove
+#  path: /releases/name=cf-mysql?
+#- type: remove
+#  path: /variables/name=cf_mysql_mysql_admin_password?
+#- type: remove
+#  path: /variables/name=cf_mysql_mysql_cluster_health_password?
+#- type: remove
+#  path: /variables/name=cf_mysql_mysql_galera_healthcheck_endpoint_password?
+#- type: remove
+#  path: /variables/name=cf_mysql_mysql_galera_healthcheck_password?

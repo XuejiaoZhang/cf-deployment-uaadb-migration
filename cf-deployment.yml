@@ -245,6 +245,77 @@ instance_groups:
           api_password: "((cf_mysql_proxy_api_password))"
           consul_enabled: true
           consul_service_name: "sql-db"
+- name: mysql-database
+  #migrated_from:
+  #- name: mysql
+  #- name: singleton-database
+  azs:
+  - z1
+  - z2
+  - z3
+  persistent_disk_type: 10GB
+  instances: 3
+  vm_type: small
+  stemcell: default
+  update:
+    serial: true
+  networks:
+  - name: default
+  jobs:
+  - name: consul_agent
+    release: consul
+    consumes:
+      consul_common: {from: consul_common_link}
+      consul_server: nil
+      consul_client: {from: consul_client_link}
+  - name: mysql
+    release: cf-mysql
+    properties:
+      network_name: default
+      cf_mysql:
+        mysql:
+          admin_password: "((cf_mysql_mysql_admin_password))"
+          port: 33306
+          binlog_enabled: false
+          cluster_health:
+            password: "((cf_mysql_mysql_cluster_health_password))"
+          galera_healthcheck:
+            db_password: "((cf_mysql_mysql_galera_healthcheck_password))"
+            endpoint_username: galera_healthcheck
+            endpoint_password: "((cf_mysql_mysql_galera_healthcheck_endpoint_password))"
+          seeded_databases:
+          - name: cloud_controller
+            username: cloud_controller
+            password: "((cc_database_password))"
+          - name: diego
+            username: diego
+            password: "((diego_database_password))"
+          - name: network_connectivity
+            username: network_connectivity
+            password: "((network_connectivity_database_password))"
+          - name: network_policy
+            username: network_policy
+            password: "((network_policy_database_password))"
+          - name: routing-api
+            username: routing-api
+            password: "((routing_api_database_password))"
+          - name: uaa
+            username: uaa
+            password: "((uaa_database_password))"
+          - name: locket
+            username: locket
+            password: "((locket_database_password))"
+  - name: proxy
+    release: cf-mysql
+    provides:
+      mysql-database:
+        as: mysql-db
+    properties:
+      cf_mysql:
+        proxy:
+          api_password: "((cf_mysql_proxy_api_password))"
+          consul_enabled: true
+          consul_service_name: "sql-db"
 - name: diego-api
   migrated_from:
   - name: diego-bbs
@@ -326,6 +397,9 @@ instance_groups:
         key: "((loggregator_tls_metron.private_key))"
   - name: silk-controller
     release: cf-networking
+    consumes:
+      database:
+        from: postgres_db
     properties:
       cf_networking:
         silk_controller:
@@ -364,6 +438,174 @@ instance_groups:
         ca_cert: "((loggregator_tls_metron.ca))"
         cert: "((loggregator_tls_metron.certificate))"
         key: "((loggregator_tls_metron.private_key))"
+
+- name: uaa2
+  azs:
+  - z1
+  - z2
+  instances: 2
+  vm_type: minimal
+  stemcell: default
+  networks:
+  - name: default
+  jobs:
+  - name: consul_agent
+    release: consul
+    consumes:
+      consul_common: {from: consul_common_link}
+      consul_server: nil
+      consul_client: {from: consul_client_link}
+    properties:
+      consul:
+        agent:
+          services:
+            uaa: {}
+  - name: uaa
+    release: uaa
+    consumes:
+      database:
+        from: mysql-db
+    properties:
+      login:
+        saml:
+          serviceProviderKey: "((uaa_login_saml.private_key))"
+          serviceProviderCertificate: "((uaa_login_saml.certificate))"
+      uaa:
+        sslCertificate: "((uaa_ssl.certificate))"
+        sslPrivateKey: "((uaa_ssl.private_key))"
+        zones:
+          internal:
+            hostnames:
+            - uaa2.service.cf.internal
+        url: https://uaa2.((system_domain))
+        admin:
+          client_secret: "((uaa_admin_client_secret))"
+        logging_level: INFO
+        scim:
+          users:
+          - name: admin
+            password: "((cf_admin_password))"
+            groups:
+            - cloud_controller.admin
+            - doppler.firehose
+            - network.admin
+            - openid
+            - routing.router_groups.read
+            - routing.router_groups.write
+            - scim.read
+            - scim.write
+          - name: bosh
+            password: "((cf_bosh_password))"
+            groups:
+            - cloud_controller.admin
+            - doppler.firehose
+            - openid
+            - routing.router_groups.read
+            - routing.router_groups.write
+            - scim.read
+            - scim.write
+        jwt:
+          policy:
+            active_key_id: key-1
+            keys:
+              key-1:
+                signingKey: "((uaa_jwt_signing_key.private_key))"
+        clients:
+          cc_routing:
+            authorities: routing.router_groups.read
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_cc-routing_secret))"
+          cc-service-dashboards:
+            authorities: clients.read,clients.write,clients.admin
+            authorized-grant-types: client_credentials
+            scope: openid,cloud_controller_service_permissions.read
+            secret: "((uaa_clients_cc-service-dashboards_secret))"
+          cc_service_key_client:
+            authorities: credhub.read,credhub.write
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_cc_service_key_client_secret))"
+          cf:
+            access-token-validity: 600
+            authorities: uaa.none
+            authorized-grant-types: password,refresh_token
+            override: true
+            refresh-token-validity: 2592000
+            scope: network.admin,network.write,cloud_controller.read,cloud_controller.write,openid,password.write,cloud_controller.admin,scim.read,scim.write,doppler.firehose,uaa.user,routing.router_groups.read,routing.router_groups.write,cloud_controller.admin_read_only,cloud_controller.global_auditor
+            secret: ''
+          cloud_controller_username_lookup:
+            authorities: scim.userids
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_cloud_controller_username_lookup_secret))"
+          doppler:
+            authorities: uaa.resource
+            override: true
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_doppler_secret))"
+          gorouter:
+            authorities: routing.routes.read
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_gorouter_secret))"
+          ssh-proxy:
+            authorized-grant-types: authorization_code
+            autoapprove: true
+            override: true
+            redirect-uri: "https://uaa.((system_domain))/login"
+            scope: openid,cloud_controller.read,cloud_controller.write
+            secret: "((uaa_clients_ssh-proxy_secret))"
+          routing_api_client:
+            authorities: routing.routes.write,routing.routes.read,routing.router_groups.read
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_routing_api_client_secret))"
+          network-policy:
+            authorities: uaa.resource,cloud_controller.admin_read_only
+            authorized-grant-types: client_credentials
+            secret: ((uaa_clients_network_policy_secret))
+          tcp_emitter:
+            authorities: routing.routes.write,routing.routes.read
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_tcp_emitter_secret))"
+          tcp_router:
+            authorities: routing.routes.read
+            authorized-grant-types: client_credentials
+            secret: "((uaa_clients_tcp_router_secret))"
+      uaadb:
+        databases:
+        - name: uaa
+          tag: uaa
+        db_scheme: mysql
+        port: 3306
+        roles:
+        - name: uaa
+          password: "((uaa_database_password))"
+          tag: admin
+  #- name: route_registrar
+  #  release: routing
+  #  properties:
+  #    route_registrar:
+  #      routes:
+  #      - health_check:
+  #          name: uaa-healthcheck
+  #          script_path: "/var/vcap/jobs/uaa/bin/health_check"
+  #        name: uaa2
+  #        port: 8080
+  #        registration_interval: 10s
+  #        tags:
+  #          component: uaa2
+  #        uris:
+  #        - uaa2.((system_domain))
+  #        - "*.uaa2.((system_domain))"
+  #        - login2.((system_domain))
+  #        - "*.login2.((system_domain))"
+  - name: statsd_injector
+    release: statsd-injector
+    properties: &statsd_injector_properties
+      loggregator:
+        tls:
+          ca_cert: "((loggregator_tls_statsdinjector.ca))"
+          statsd_injector:
+            cert: "((loggregator_tls_statsdinjector.certificate))"
+            key: "((loggregator_tls_statsdinjector.private_key))"
+
 - name: uaa
   azs:
   - z1
@@ -387,6 +629,9 @@ instance_groups:
             uaa: {}
   - name: uaa
     release: uaa
+    consumes:
+      database:
+        from: postgres_db
     properties:
       login:
         saml:
@@ -527,6 +772,7 @@ instance_groups:
           statsd_injector:
             cert: "((loggregator_tls_statsdinjector.certificate))"
             key: "((loggregator_tls_statsdinjector.private_key))"
+
 - name: singleton-blobstore
   migrated_from:
   - name: blobstore
@@ -605,6 +851,9 @@ instance_groups:
     release: capi
     provides:
       cloud_controller: {as: cloud_controller, shared: true}
+    consumes:
+      database:
+        from: postgres_db
     properties:
       router:
         route_services_secret: "((router_route_services_secret))"
@@ -789,6 +1038,9 @@ instance_groups:
         tls_port: 8443
   - name: policy-server
     release: cf-networking
+    consumes:
+      database:
+        from: postgres_db
     properties:
       cf_networking:
         policy_server:
@@ -803,6 +1055,9 @@ instance_groups:
             name: network_policy
   - name: policy-server-internal
     release: cf-networking
+    consumes:
+      database:
+        from: postgres_db
     properties:
       cf_networking:
         policy_server_internal:
@@ -840,6 +1095,9 @@ instance_groups:
       consul_client: {from: consul_client_link}
   - name: cloud_controller_worker
     release: capi
+    consumes:
+      database:
+        from: postgres_db
     properties:
       cc:
         db_encryption_key: "((cc_db_encryption_key))"
@@ -989,6 +1247,9 @@ instance_groups:
       loggregator: *diego_loggregator_client_properties
   - name: cloud_controller_clock
     release: capi
+    consumes:
+      database:
+        from: postgres_db
     properties:
       cc:
         db_encryption_key: "((cc_db_encryption_key))"
