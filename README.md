@@ -1,5 +1,17 @@
 # cf-deployment
 
+### Cloud Foundry UAA DB migration from Postgres to MySQL
+Steps:
+- Deploy: create uaa2 and mysql, let uaa2 consume from mysql (this will create tables on mysql), make sure uaa2 is not used by other components, no changes on uaa and postgre for now. Commit: 1a9eaf7d5ff4a90368cacff879ac1338a303dc19
+- Bosh stop uaa/uaa2
+- Data migration from postgre to mysql, tool: https://github.com/pivotal-cf/pg2mysql
+- Deploy: drop uaa2, uaa consumes from mysql other then postgre, keep postgre just in case. Commit: c6e09ecd6d25dc4bea300575503c6cc9136c5f96
+- Bosh start uaa to make sure the changes on uaa will be applied.
+- Check: `cf login`, `cf apps` etc.
+
+
+#### The following is from the official repo
+
 ### Table of Contents
 * <a href='#purpose'>Purpose</a>
 * <a href='#migrating'>Migrating from cf-release to cf-deployment</a>
